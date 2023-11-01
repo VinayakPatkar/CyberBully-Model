@@ -145,9 +145,55 @@ class Bert_Aggression_Identification_Model(nn.Module):
         
         return proba
 mod = Bert_Aggression_Identification_Model(h1,h2,class_num,drop_out_rate).to(device)
-for i,data in enumerate(train_dataloader):
-    print(data[0][0])
-    print(data[1][0])
-    print(data[2][0])
-    print(mod(data[0],data[2]))
-    break
+def train(data, model, optimizer, loss_fn):
+    model.train()
+    tokens_ids, labels, masks = data
+    outputs = model(tokens_ids, masks)
+    loss = loss_fn(outputs, labels)
+    preds = outputs.argmax(-1)
+    labels = labels.argmax(-1)
+    
+    acc = (sum(preds==labels) / len(labels))
+    model.zero_grad()
+    loss.backward()
+    optimizer.step()
+    
+    return loss, acc
+@torch.no_grad()
+def validate(data, model, loss_fn):
+    model.eval()
+    tokens_ids, labels, masks = data
+    outputs = model(tokens_ids, masks)
+    loss = loss_fn(outputs, labels)
+    preds = outputs.argmax(-1)
+    labels = labels.argmax(-1)
+    
+    acc = (sum(preds==labels) / len(labels))
+    
+    total_predict.extend(list(preds.cpu().numpy()))
+    total_label.extend(list(labels.cpu().numpy()))
+    
+    return loss, acc
+model = Bert_Aggression_Identification_Model(h1, h2, class_num, drop_out_rate).to(device)
+loss_fn = nn.CrossEntropyLoss()
+optimizer = optim.Adam(model.parameters(), lr=learning_rate)
+scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
+for epoch in range(epochs):
+    n_batch = len(train_dataloader)
+    for i, data in enumerate(train_dataloader):
+        train_loss, train_acc = train(data, model, 
+                                      optimizer, loss_fn)
+        pos = epoch + ((i+1)/n_batch)
+        print(pos=pos, train_loss=train_loss, 
+                   train_acc=train_acc)
+        
+    total_predict = []
+    total_label = []
+
+    n_batch = len(validate_dataloader)
+    for i, data in enumerate(validate_dataloader):
+        val_loss, val_acc = validate(data, model, loss_fn)
+        pos = epoch + ((i+1)/n_batch)
+        print(pos=pos, val_loss=val_loss, val_acc=val_acc)
+    
+    scheduler.step()
